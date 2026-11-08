@@ -111,6 +111,44 @@
             box-shadow: 0 0 30px rgba(255, 50, 90, 0.8);
         }
 
+        #login-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: radial-gradient(circle at center, rgba(90, 0, 45, 0.45), transparent 35%), #090309;
+            backdrop-filter: blur(10px);
+        }
+
+        .login-panel {
+            width: min(360px, 88vw);
+            text-align: center;
+            color: #fff;
+        }
+
+        .login-panel h2,
+        .login-panel p,
+        #login-status {
+            display: none;
+        }
+
+        #google-login-button {
+            width: 100%;
+            border: 0;
+            border-radius: 999px;
+            padding: 15px 20px;
+            background: #fff;
+            color: #3c4043;
+            font-family: inherit;
+            font-size: 1.05em;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 8px 30px rgba(255, 80, 150, 0.25);
+        }
+
         #start-button-image {
             width: auto;
             height: auto;
@@ -189,8 +227,9 @@
 
         #center-flower-image {
             width: min(40vw, 220px);
+            height: min(54vw, 300px);
             max-width: 220px;
-            height: auto;
+            object-fit: cover;
             border-radius: 22px;
             box-shadow: 0 0 25px rgba(255, 168, 207, 0.75), 0 0 45px rgba(255, 125, 180, 0.45);
             filter: drop-shadow(0 0 18px rgba(255, 143, 199, 0.8));
@@ -456,6 +495,13 @@
 
 <body>
 
+    <div id="login-overlay">
+        <div class="login-panel">
+            <button id="google-login-button" type="button">Continuar com Google</button>
+            <div id="login-status" role="status"></div>
+        </div>
+    </div>
+
     <!-- Decoração de Girassóis -->
     <div class="sunflower-decoration sunflower-tl"></div>
     <div class="sunflower-decoration sunflower-tr"></div>
@@ -478,8 +524,8 @@
     <div id="petal-burst-layer"></div>
 
     <div id="center-flower-overlay" aria-hidden="true">
-        <img id="center-flower-image" src="images/imagemcentro.png" alt="Flor Sakura" />
-        <div id="center-flower-caption">Feita para Kitty</div>
+        <img id="center-flower-image" src="images/foto2.png" alt="Foto do centro" />
+        <div id="center-flower-caption">Eu sempre estarei com você</div>
     </div>
 
     <audio id="bg-audio" loop preload="none"></audio>
@@ -548,6 +594,104 @@
                 return false;
             }
         };
+    </script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyAB6_ixzDaDbe45Mnwx7zgbViyY6rz2ov4",
+            authDomain: "teste-87e80.firebaseapp.com",
+            projectId: "teste-87e80",
+            storageBucket: "teste-87e80.firebasestorage.app",
+            messagingSenderId: "84979585624",
+            appId: "1:84979585624:web:767209c0da0a1b0d89302d",
+            measurementId: "G-PW2SRXXTFN"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const firebaseAuth = firebase.auth();
+        const firestore = firebase.firestore();
+        const loginOverlay = document.getElementById('login-overlay');
+        const loginStatus = document.getElementById('login-status');
+        const loginButton = document.getElementById('google-login-button');
+
+        async function registerVisit(user) {
+            const now = new Date();
+            const visitData = {
+                uid: user.uid,
+                email: user.email || null,
+                displayName: user.displayName || null,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                localTime: now.toISOString(),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                screenWidth: window.screen.width,
+                screenHeight: window.screen.height
+            };
+
+            const visitRef = await firestore.collection('visits').add(visitData);
+            const userRef = firestore.collection('users').doc(user.uid);
+            await firestore.runTransaction(async transaction => {
+                const snapshot = await transaction.get(userRef);
+                const previousCount = snapshot.exists ? (snapshot.data().visitCount || 0) : 0;
+                transaction.set(userRef, {
+                    uid: user.uid,
+                    email: user.email || null,
+                    displayName: user.displayName || null,
+                    lastVisitAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    visitCount: previousCount + 1
+                }, { merge: true });
+            });
+
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(async position => {
+                    await visitRef.update({
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        locationAccuracy: position.coords.accuracy,
+                        locationTimestamp: new Date(position.timestamp).toISOString()
+                    });
+                }, () => {
+                    // Localização não será registrada quando o usuário negar ou o navegador bloquear.
+                }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+            }
+        }
+
+        loginButton.addEventListener('click', async () => {
+            loginButton.disabled = true;
+            loginStatus.textContent = 'Conectando...';
+            const provider = new firebase.auth.GoogleAuthProvider();
+            provider.setCustomParameters({ prompt: 'select_account' });
+
+            try {
+                await firebaseAuth.signInWithPopup(provider);
+            } catch (error) {
+                loginStatus.textContent = error.code === 'auth/popup-blocked'
+                    ? 'Permita pop-ups para entrar com Google.'
+                    : 'Não foi possível entrar. Tente novamente.';
+                loginButton.disabled = false;
+            }
+        });
+
+        firebaseAuth.onAuthStateChanged(async user => {
+            if (!user) {
+                loginOverlay.style.display = 'flex';
+                return;
+            }
+
+            try {
+                await registerVisit(user);
+                loginOverlay.style.display = 'none';
+            } catch (error) {
+                loginStatus.textContent = 'Acesso bloqueado pela configuração do banco.';
+                loginButton.disabled = false;
+                await firebaseAuth.signOut();
+            }
+        });
     </script>
 
     <script type="module">
@@ -681,6 +825,8 @@
         let raycaster, mouse;
         let currentCardIndex = 0;
         let centerFlowerTimeout = null;
+        let centerPhotoInterval = null;
+        let centerPhotoIndex = 0;
 
         function init() {
             scene = new THREE.Scene();
@@ -1045,11 +1191,40 @@
 
         function showCenterFlower() {
             const overlay = document.getElementById('center-flower-overlay');
-            if (!overlay) return;
+            const photo = document.getElementById('center-flower-image');
+            const caption = document.getElementById('center-flower-caption');
+            if (!overlay || !photo || !caption) return;
+
+            const album = [
+                'images/foto1.png',
+                'images/foto2.png',
+                'images/foto3.png'
+            ];
+
+            if (centerPhotoInterval) clearInterval(centerPhotoInterval);
+            if (centerFlowerTimeout) clearTimeout(centerFlowerTimeout);
+
+            centerPhotoIndex = 0;
+            photo.src = album[centerPhotoIndex];
+            caption.textContent = 'Eu sempre estarei com você';
 
             overlay.classList.remove('is-visible');
             void overlay.offsetWidth;
             overlay.classList.add('is-visible');
+
+            centerPhotoInterval = setInterval(() => {
+                centerPhotoIndex = (centerPhotoIndex + 1) % album.length;
+                photo.animate(
+                    [{ opacity: 0.2, transform: 'scale(0.96)' }, { opacity: 1, transform: 'scale(1)' }],
+                    { duration: 450, easing: 'ease-out' }
+                );
+                caption.animate(
+                    [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
+                    { duration: 450, easing: 'ease-out' }
+                );
+                photo.src = album[centerPhotoIndex];
+                createSakuraBurst(window.innerWidth / 2, window.innerHeight / 2);
+            }, 1500);
 
             playBrilhoAudio();
 
@@ -1057,10 +1232,11 @@
             const centerY = window.innerHeight / 2;
             createSakuraBurst(centerX, centerY);
 
-            if (centerFlowerTimeout) clearTimeout(centerFlowerTimeout);
             centerFlowerTimeout = setTimeout(() => {
                 overlay.classList.remove('is-visible');
-            }, 1800);
+                clearInterval(centerPhotoInterval);
+                centerPhotoInterval = null;
+            }, 4500);
         }
 
         function onCanvasClick(event) {
