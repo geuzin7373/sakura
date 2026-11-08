@@ -680,16 +680,16 @@
         firebaseAuth.onAuthStateChanged(async user => {
             if (!user) {
                 loginOverlay.style.display = 'flex';
+                loginButton.disabled = false;
                 return;
             }
 
+            loginOverlay.style.display = 'none';
+
             try {
                 await registerVisit(user);
-                loginOverlay.style.display = 'none';
             } catch (error) {
-                loginStatus.textContent = 'Acesso bloqueado pela configuração do banco.';
-                loginButton.disabled = false;
-                await firebaseAuth.signOut();
+                console.error('Não foi possível registrar o acesso:', error);
             }
         });
     </script>
