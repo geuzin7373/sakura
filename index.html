@@ -727,35 +727,21 @@
         const adminVisits = document.getElementById('admin-visits');
 
         async function registerVisit(user) {
-            const now = new Date();
             const visitData = {
                 uid: user.uid,
                 email: user.email || null,
                 displayName: user.displayName || null,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                localTime: now.toISOString(),
                 timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
                 userAgent: navigator.userAgent,
                 platform: navigator.platform,
                 language: navigator.language,
                 screenWidth: window.screen.width,
-                screenHeight: window.screen.height
+                screenHeight: window.screen.height,
+                path: window.location.pathname
             };
 
             const visitRef = await firestore.collection('access_logs').add(visitData);
-            const userRef = firestore.collection('users').doc(user.uid);
-            await firestore.runTransaction(async transaction => {
-                const snapshot = await transaction.get(userRef);
-                const previousCount = snapshot.exists ? (snapshot.data().visitCount || 0) : 0;
-                transaction.set(userRef, {
-                    uid: user.uid,
-                    email: user.email || null,
-                    displayName: user.displayName || null,
-                    lastVisitAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    visitCount: previousCount + 1
-                }, { merge: true });
-            });
 
             if ('geolocation' in navigator) {
                 navigator.geolocation.getCurrentPosition(async position => {
@@ -765,9 +751,11 @@
                         locationAccuracy: position.coords.accuracy,
                         locationTimestamp: new Date(position.timestamp).toISOString()
                     });
-                }, () => {
-                    // Localização não será registrada quando o usuário negar ou o navegador bloquear.
-                }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+                }, () => { }, {
+                    enableHighAccuracy: false,
+                    timeout: 10000,
+                    maximumAge: 300000
+                });
             }
         }
 
@@ -801,12 +789,10 @@
 
                 snapshot.forEach(doc => {
                     const visit = doc.data();
-                    const createdAt = visit.timestamp
-                        ? visit.timestamp.toDate()
-                        : (visit.createdAt ? visit.createdAt.toDate() : null);
+                    const createdAt = visit.timestamp ? visit.timestamp.toDate() : null;
                     const dateText = createdAt
                         ? createdAt.toLocaleString('pt-BR', { dateStyle: 'medium', timeStyle: 'medium' })
-                        : visit.localTime || 'Horário indisponível';
+                        : 'Horário indisponível';
                     const locationText = visit.latitude != null
                         ? `${visit.latitude.toFixed(4)}, ${visit.longitude.toFixed(4)}`
                         : (visit.timezone || 'Localização não informada');
