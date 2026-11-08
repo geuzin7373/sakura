@@ -149,6 +149,97 @@
             box-shadow: 0 8px 30px rgba(255, 80, 150, 0.25);
         }
 
+        #admin-button {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 80;
+            display: none;
+            border: 0;
+            border-radius: 999px;
+            padding: 11px 16px;
+            background: rgba(255, 255, 255, 0.92);
+            color: #8b002f;
+            font-family: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255, 105, 180, 0.5);
+        }
+
+        #admin-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 12000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.78);
+            backdrop-filter: blur(8px);
+        }
+
+        #admin-panel {
+            width: min(760px, 94vw);
+            height: min(620px, 82vh);
+            overflow: hidden;
+            border: 1px solid rgba(255, 180, 215, 0.35);
+            border-radius: 8px;
+            background: rgba(18, 6, 14, 0.96);
+            color: #fff;
+            box-shadow: 0 0 35px rgba(255, 105, 180, 0.25);
+        }
+
+        .admin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(255, 180, 215, 0.18);
+        }
+
+        .admin-header h2 {
+            font-size: 1.35rem;
+        }
+
+        #admin-close {
+            border: 0;
+            background: transparent;
+            color: #fff;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        #admin-summary {
+            padding: 10px 16px;
+            color: #ffc3dc;
+        }
+
+        #admin-visits {
+            height: calc(100% - 92px);
+            overflow-y: auto;
+            padding: 0 16px 16px;
+        }
+
+        .visit-row {
+            display: grid;
+            grid-template-columns: minmax(150px, 1.4fr) minmax(140px, 1fr) minmax(120px, 1fr);
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.88rem;
+        }
+
+        .visit-row strong {
+            color: #ffd3e6;
+        }
+
+        @media (max-width: 600px) {
+            .visit-row {
+                grid-template-columns: 1fr;
+                gap: 4px;
+            }
+        }
+
         #start-button-image {
             width: auto;
             height: auto;
@@ -502,6 +593,18 @@
         </div>
     </div>
 
+    <button id="admin-button" type="button">Acessos</button>
+    <div id="admin-overlay">
+        <div id="admin-panel">
+            <div class="admin-header">
+                <h2>Acessos ao site</h2>
+                <button id="admin-close" type="button" aria-label="Fechar">&times;</button>
+            </div>
+            <div id="admin-summary">Carregando...</div>
+            <div id="admin-visits"></div>
+        </div>
+    </div>
+
     <!-- Decoração de Girassóis -->
     <div class="sunflower-decoration sunflower-tl"></div>
     <div class="sunflower-decoration sunflower-tr"></div>
@@ -613,9 +716,15 @@
         firebase.initializeApp(firebaseConfig);
         const firebaseAuth = firebase.auth();
         const firestore = firebase.firestore();
+        const ADMIN_EMAIL = 'ageuzinho99@gmail.com';
         const loginOverlay = document.getElementById('login-overlay');
         const loginStatus = document.getElementById('login-status');
         const loginButton = document.getElementById('google-login-button');
+        const adminButton = document.getElementById('admin-button');
+        const adminOverlay = document.getElementById('admin-overlay');
+        const adminClose = document.getElementById('admin-close');
+        const adminSummary = document.getElementById('admin-summary');
+        const adminVisits = document.getElementById('admin-visits');
 
         async function registerVisit(user) {
             const now = new Date();
@@ -623,6 +732,7 @@
                 uid: user.uid,
                 email: user.email || null,
                 displayName: user.displayName || null,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 localTime: now.toISOString(),
                 timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
@@ -633,7 +743,7 @@
                 screenHeight: window.screen.height
             };
 
-            const visitRef = await firestore.collection('visits').add(visitData);
+            const visitRef = await firestore.collection('access_logs').add(visitData);
             const userRef = firestore.collection('users').doc(user.uid);
             await firestore.runTransaction(async transaction => {
                 const snapshot = await transaction.get(userRef);
@@ -677,14 +787,64 @@
             }
         });
 
+        async function loadAdminVisits() {
+            if (!firebaseAuth.currentUser || firebaseAuth.currentUser.email !== ADMIN_EMAIL) return;
+
+            try {
+                const snapshot = await firestore.collection('access_logs')
+                    .orderBy('timestamp', 'desc')
+                    .limit(100)
+                    .get();
+
+                adminSummary.textContent = `${snapshot.size} acessos registrados`;
+                adminVisits.innerHTML = '';
+
+                snapshot.forEach(doc => {
+                    const visit = doc.data();
+                    const createdAt = visit.timestamp
+                        ? visit.timestamp.toDate()
+                        : (visit.createdAt ? visit.createdAt.toDate() : null);
+                    const dateText = createdAt
+                        ? createdAt.toLocaleString('pt-BR', { dateStyle: 'medium', timeStyle: 'medium' })
+                        : visit.localTime || 'Horário indisponível';
+                    const locationText = visit.latitude != null
+                        ? `${visit.latitude.toFixed(4)}, ${visit.longitude.toFixed(4)}`
+                        : (visit.timezone || 'Localização não informada');
+
+                    const row = document.createElement('div');
+                    row.className = 'visit-row';
+                    row.innerHTML = `<strong>${visit.email || 'Email indisponível'}</strong><span>${dateText}</span><span>${locationText}</span>`;
+                    adminVisits.appendChild(row);
+                });
+            } catch (error) {
+                adminSummary.textContent = 'Não foi possível carregar os acessos.';
+                console.error(error);
+            }
+        }
+
+        adminButton.addEventListener('click', async () => {
+            adminOverlay.style.display = 'flex';
+            await loadAdminVisits();
+        });
+
+        adminClose.addEventListener('click', () => {
+            adminOverlay.style.display = 'none';
+        });
+
+        adminOverlay.addEventListener('click', event => {
+            if (event.target === adminOverlay) adminOverlay.style.display = 'none';
+        });
+
         firebaseAuth.onAuthStateChanged(async user => {
             if (!user) {
                 loginOverlay.style.display = 'flex';
                 loginButton.disabled = false;
+                adminButton.style.display = 'none';
                 return;
             }
 
             loginOverlay.style.display = 'none';
+            adminButton.style.display = user.email === ADMIN_EMAIL ? 'block' : 'none';
 
             try {
                 await registerVisit(user);
